@@ -16,7 +16,7 @@ class PacmanAgent(Agent):
             state: GameState. See API or class `pacman.GameState`.
         
         Returns:
-            A legal move as defined in `game.Directions`m.
+            A legal move as defined in `game.Directions`.
         """
         legal_moves = state.getLegalActions(0)  # 0 is Pacman's agent index
         
