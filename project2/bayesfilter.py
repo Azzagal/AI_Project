@@ -155,8 +155,7 @@ class BeliefStateAgent(Agent):
                 # Skip negative distances
                 if adjustedDist < 0:
                     continue
-                # Calculate the probability of the evidence given the
-                # adjusted distance
+                # Compute the binomial distribution
                 O_t[i, j] = math.comb(n, int(adjustedDist)) * (
                             (p**adjustedDist) * ((1 - p)**(n-adjustedDist)))
 
