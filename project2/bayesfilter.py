@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 from pacman_module.game import Agent, Directions, manhattanDistance
 
@@ -133,7 +134,25 @@ class BeliefStateAgent(Agent):
             The W x H observation matrix O_t.
         """
 
-        pass
+        # Dimensions of the grid
+        height, width = walls.height, walls.width
+
+        O_t = np.zeros((width, height))
+        p = 0.5
+        n = 4
+
+        for i in range(width):
+            for j in range(height):
+                if walls[i][j]:
+                    continue
+                distance = manhattanDistance(position, (i, j))
+                adjustedDist = evidence - distance + n * p
+                if adjustedDist < 0:
+                    continue
+                O_t[i, j] = math.comb(n, int(adjustedDist)) * (
+                            (p**adjustedDist) * ((1 - p)**(n-adjustedDist)))
+
+        return O_t
 
     def update(self, walls, belief, evidence, position):
         """Updates the previous ghost belief state
@@ -156,7 +175,12 @@ class BeliefStateAgent(Agent):
         T = self.transition_matrix(walls, position)
         O = self.observation_matrix(walls, evidence, position)
 
-        pass
+        tansitionBelief = np.tensordot(belief, T, axes=([0, 1], [0, 1]))
+        newBelief = np.multiply(tansitionBelief, O)
+        # Normalize the belief
+        newBelief = newBelief / np.sum(newBelief)
+
+        return newBelief
 
     def get_action(self, state):
         """Updates the previous belief states given the current state.
@@ -210,6 +234,7 @@ class PacmanAgent(Agent):
             A legal move as defined in `game.Directions`.
         """
 
+        # faire astar avec centre de masse des fantomes et faire un switch des fantomes
         return Directions.STOP
 
     def get_action(self, state):
