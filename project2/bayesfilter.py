@@ -137,18 +137,26 @@ class BeliefStateAgent(Agent):
         # Dimensions of the grid
         height, width = walls.height, walls.width
 
+        # Initialize the observation matrix with zeros
         O_t = np.zeros((width, height))
         p = 0.5
         n = 4
 
         for i in range(width):
             for j in range(height):
+                # Consider the current position of the ghost at (i,j)
+                # Skip walls
                 if walls[i][j]:
                     continue
+                # Calculate the Manhattan distance between the ghost's
                 distance = manhattanDistance(position, (i, j))
+                # Calculate the adjusted distance
                 adjustedDist = evidence - distance + n * p
+                # Skip negative distances
                 if adjustedDist < 0:
                     continue
+                # Calculate the probability of the evidence given the
+                # adjusted distance
                 O_t[i, j] = math.comb(n, int(adjustedDist)) * (
                             (p**adjustedDist) * ((1 - p)**(n-adjustedDist)))
 
@@ -175,7 +183,9 @@ class BeliefStateAgent(Agent):
         T = self.transition_matrix(walls, position)
         O = self.observation_matrix(walls, evidence, position)
 
+        # update the transition matrix with the belief with values in [0, 1]
         tansitionBelief = np.tensordot(belief, T, axes=([0, 1], [0, 1]))
+        # update the belief with the observation matrix
         newBelief = np.multiply(tansitionBelief, O)
         # Normalize the belief
         newBelief = newBelief / np.sum(newBelief)
