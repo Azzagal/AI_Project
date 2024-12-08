@@ -2,6 +2,7 @@ import numpy as np
 import math
 
 from pacman_module.game import Agent, Directions, manhattanDistance
+from pacman_module.util import PriorityQueue
 
 
 class BeliefStateAgent(Agent):
@@ -155,7 +156,8 @@ class BeliefStateAgent(Agent):
                 # Skip negative distances
                 if adjustedDist < 0:
                     continue
-                # Compute the binomial distribution
+                # Calculate the probability of the evidence given the
+                # adjusted distance
                 O_t[i, j] = math.comb(n, int(adjustedDist)) * (
                             (p**adjustedDist) * ((1 - p)**(n-adjustedDist)))
 
@@ -179,13 +181,13 @@ class BeliefStateAgent(Agent):
             The updated ghost belief state b_t as a W x H matrix.
         """
 
-        T = self.transition_matrix(walls, position)
-        O = self.observation_matrix(walls, evidence, position)
+        Trans = self.transition_matrix(walls, position)
+        Obs = self.observation_matrix(walls, evidence, position)
 
         # update the transition matrix with the belief with values in [0, 1]
-        tansitionBelief = np.tensordot(belief, T, axes=([0, 1], [0, 1]))
+        tansitionBelief = np.tensordot(belief, Trans, axes=([0, 1], [0, 1]))
         # update the belief with the observation matrix
-        newBelief = np.multiply(tansitionBelief, O)
+        newBelief = np.multiply(tansitionBelief, Obs)
         # Normalize the belief
         newBelief = newBelief / np.sum(newBelief)
 
@@ -231,6 +233,70 @@ class PacmanAgent(Agent):
     def __init__(self):
         super().__init__()
 
+    def heuristic(self, state):
+        """
+        Heuristic evaluation function based on shortest path to ghosts
+
+        Arguments:
+            state: Current game state
+
+        Returns:
+            float: The heuristic value for this state
+        """
+
+    def a_star_with_heuristic(self, start, target, walls):
+        """
+        A* search algorithm to find the shortest path from start to target.
+
+        Arguments:
+            start: Tuple (x, y) of Pacman's starting position.
+            target: Tuple (x, y) of the goal position.
+            walls: A grid of walls (as a 2D array or similar structure).
+
+        Returns:
+            A list of positions [(x, y), ...] representing the path
+            from start to target.
+        """
+
+        # Priority queue for A*, storing ((position, path, cost), priority)
+        fringe = PriorityQueue()
+        fringe.push((start, []), 0)  # Start with priority 0 and an empty path
+
+        # Closed set to keep track of visited positions
+        closed = set()
+
+        # Movement directions (dx, dy)
+        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+
+        while not fringe.isEmpty():
+            # Remove node with the lowest priority
+            priority, (current, path) = fringe.pop()
+
+            # Check if goal is reached
+            if current == target:
+                return path
+
+            if current in closed:
+                continue
+            closed.add(current)
+
+            # Expand successors
+            for dx, dy in directions:
+                next_pos = (current[0] + dx, current[1] + dy)
+
+                # Check if the next position is valid
+                if (0 <= next_pos[0] < walls.width
+                        and 0 <= next_pos[1] < walls.height
+                        and not walls[next_pos[0]][next_pos[1]]):
+                    # Add to the fringe
+                    new_path = path + [next_pos]
+                    g_cost = len(new_path)  # Cost so far
+                    h_cost = self.heuristic(next_pos, target)  # Heuristic cost
+                    priority = g_cost + h_cost
+                    fringe.push((next_pos, new_path), priority)
+
+        return []  # Return an empty path if no solution is found
+
     def _get_action(self, walls, beliefs, eaten, position):
         """
         Arguments:
@@ -243,7 +309,55 @@ class PacmanAgent(Agent):
             A legal move as defined in `game.Directions`.
         """
 
-        # faire astar avec centre de masse des fantomes et faire un switch des fantomes
+        ghosts = []
+        for belief, is_eaten in zip(beliefs, eaten):
+            if is_eaten:
+                continue
+
+            # Compute the center of mass for the ghost belief state
+            total_mass = np.sum(belief)
+            if total_mass == 0:
+                continue
+
+            center_of_mass = np.array([0.0, 0.0])
+            for i in range(belief.shape[0]):
+                for j in range(belief.shape[1]):
+                    center_of_mass[0] += i * belief[i, j]
+                    center_of_mass[1] += j * belief[i, j]
+            center_of_mass /= total_mass
+
+            ghosts.append(center_of_mass)
+
+        if not ghosts:
+            return Directions.STOP  # No ghosts detected
+
+        # Find the closest ghost center
+        target = min(ghosts, key=lambda
+                     center: manhattanDistance(position, tuple(center)))
+
+        # Convert center to nearest grid point
+        target = tuple(map(round, target))
+
+        # Plan a path using A* algorithm
+        path = self.a_star_with_heuristic(position, target, walls)
+
+        if not path:
+            return Directions.STOP  # No valid path found
+
+        # Choose the first step in the path
+        next_position = path[0]
+        dx, dy = next_position[0] - position[0], next_position[1] - position[1]
+
+        # Map direction to game directions
+        if dx == 1:
+            return Directions.EAST
+        elif dx == -1:
+            return Directions.WEST
+        elif dy == 1:
+            return Directions.NORTH
+        elif dy == -1:
+            return Directions.SOUTH
+
         return Directions.STOP
 
     def get_action(self, state):
