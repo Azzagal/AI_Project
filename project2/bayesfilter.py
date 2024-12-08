@@ -60,62 +60,63 @@ class BeliefStateAgent(Agent):
 
                 # Uniform distribution over valid moves
                 if valid_moves:
-                    match self.ghost:
-                        case 'afraid':
-                            prob = 1.0 / len(valid_moves)
-                            adjustedProbs = []
+                    if self.ghost == 'afraid':
+                        prob = 1.0 / len(valid_moves)
+                        adjustedProbs = []
 
-                            for ni, nj in valid_moves:
-                                # Calculate the Manhattan distance between the
-                                # ghost's next position and Pacman
-                                distance = manhattanDistance(position,
-                                                             (ni, nj))
-                                adjustedProbs.append(prob * distance)
+                        for ni, nj in valid_moves:
+                            # Calculate the Manhattan distance between the
+                            # ghost's next position and Pacman
+                            distance = manhattanDistance(position,
+                                                         (ni, nj))
+                            adjustedProbs.append(prob * distance)
 
-                            # Normalize probabilities
-                            total = sum(adjustedProbs)
-                            if total > 0:  # To prevent division by zero
-                                adjustedProbs = [p / total
-                                                 for p in adjustedProbs]
+                        # Normalize probabilities
+                        NormalizedProbs = sum(adjustedProbs)
 
-                            # Assign normalized probabilities to the
-                            # transition matrix
-                            for idx, (ni, nj) in enumerate(valid_moves):
-                                T_t[i, j, ni, nj] = adjustedProbs[idx]
+                        # To prevent division by zero
+                        if NormalizedProbs > 0:
+                            adjustedProbs = [p / NormalizedProbs
+                                             for p in adjustedProbs]
 
-                        case 'fearless':
-                            prob = 1.0 / len(valid_moves)
-                            for ni, nj in valid_moves:
-                                T_t[i, j, ni, nj] = prob
+                        # Assign normalized probabilities to the
+                        # transition matrix
+                        for idx, (ni, nj) in enumerate(valid_moves):
+                            T_t[i, j, ni, nj] = adjustedProbs[idx]
 
-                        case 'terrified':
-                            prob = 1.0 / len(valid_moves)
-                            adjustedProbs = []
+                    elif self.ghost == 'fearless':
+                        # Assign equal probabilities to all valid moves
+                        prob = 1.0 / len(valid_moves)
+                        for ni, nj in valid_moves:
+                            T_t[i, j, ni, nj] = prob
 
-                            for ni, nj in valid_moves:
-                                # Calculate the Manhattan distance between the
-                                # ghost's next position and Pacman
-                                distance = manhattanDistance(position,
-                                                             (ni, nj))
-                                adjustedProbs.append(prob * distance)
+                    elif self.ghost == 'terrified':
+                        prob = 1.0 / len(valid_moves)
+                        adjustedProbs = []
 
-                            # Find the maximum adjusted probability
-                            max_prob = max(adjustedProbs)
+                        for ni, nj in valid_moves:
+                            # Calculate the Manhattan distance between the
+                            # ghost's next position and Pacman
+                            distance = manhattanDistance(position, (ni, nj))
+                            adjustedProbs.append(prob * distance)
 
-                            # Find all indices corresponding
-                            # to the maximum probability
-                            max_indices = [idx for idx, p in
-                                           enumerate(adjustedProbs)
-                                           if p == max_prob]
+                        # Find the maximum adjusted probability
+                        max_prob = max(adjustedProbs)
 
-                            # Assign probabilities
-                            for idx, (ni, nj) in enumerate(valid_moves):
-                                if idx in max_indices:
-                                    # Divide equally among max indices
-                                    T_t[i, j, ni, nj] = 1.0 / len(max_indices)
-                                else:
-                                    # Assign zero probability
-                                    T_t[i, j, ni, nj] = 0.0
+                        # Find all indices corresponding
+                        # to the maximum probability
+                        max_indices = [idx for idx, p in
+                                       enumerate(adjustedProbs)
+                                       if p == max_prob]
+
+                        # Assign probabilities
+                        for idx, (ni, nj) in enumerate(valid_moves):
+                            if idx in max_indices:
+                                # Divide equally among max indices
+                                T_t[i, j, ni, nj] = 1.0 / len(max_indices)
+                            else:
+                                # Assign zero probability
+                                T_t[i, j, ni, nj] = 0.0
         return T_t
 
     def observation_matrix(self, walls, evidence, position):
@@ -145,17 +146,22 @@ class BeliefStateAgent(Agent):
 
         for i in range(width):
             for j in range(height):
+
                 # Consider the current position of the ghost at (i,j)
                 # Skip walls
                 if walls[i][j]:
                     continue
+
                 # Calculate the Manhattan distance between the ghost's
                 distance = manhattanDistance(position, (i, j))
+
                 # Calculate the adjusted distance
                 adjustedDist = evidence - distance + n * p
+
                 # Skip negative distances
                 if adjustedDist < 0:
                     continue
+
                 # Calculate the probability of the evidence given the
                 # adjusted distance
                 O_t[i, j] = math.comb(n, int(adjustedDist)) * (
@@ -185,11 +191,42 @@ class BeliefStateAgent(Agent):
         Obs = self.observation_matrix(walls, evidence, position)
 
         # update the transition matrix with the belief with values in [0, 1]
-        tansitionBelief = np.tensordot(belief, Trans, axes=([0, 1], [0, 1]))
+        transitionBelief = np.tensordot(belief, Trans, axes=([0, 1], [0, 1]))
+
         # update the belief with the observation matrix
-        newBelief = np.multiply(tansitionBelief, Obs)
+        newBelief = np.multiply(transitionBelief, Obs)
+
         # Normalize the belief
-        newBelief = newBelief / np.sum(newBelief)
+        NormalizedBelief = np.sum(newBelief)
+
+        # If the sum of the belief is 0, create a uniform belief over all
+        if NormalizedBelief == 0:
+            # Create a uniform belief over all non-wall cells
+            newBelief = np.ones_like(belief)
+
+            # Set walls to 0 probability
+            for i in range(belief.shape[0]):
+                for j in range(belief.shape[1]):
+                    if walls[i][j]:  # Check if the cell is a wall
+                        newBelief[i, j] = 0
+
+            # Normalize the uniform belief matrix
+            NormalizedBelief = np.sum(newBelief)
+
+            if NormalizedBelief == 0:
+                # If for some reason everything is a wall or there was no
+                # valid space, set the belief to a uniform distribution
+                newBelief = np.ones_like(belief)
+
+                # Distribute evenly over all cells (including walls)
+                newBelief /= newBelief.size
+
+            else:
+                # Normalize the belief
+                newBelief /= NormalizedBelief
+        else:
+            # Normalize the belief
+            newBelief /= NormalizedBelief
 
         return newBelief
 
@@ -233,16 +270,29 @@ class PacmanAgent(Agent):
     def __init__(self):
         super().__init__()
 
-    def heuristic(self, state):
+    def inBounds(self, position, walls):
         """
-        Heuristic evaluation function based on shortest path to ghosts
+        Check if a given position is within the bounds
+        of the grid and not a wall.
 
-        Arguments:
-            state: Current game state
+        Args:
+            position (tuple): A tuple (x, y) representing
+                            the position to check.
+            walls (object): An object representing the grid with attributes
+                            'width' and 'height', and supports indexing to
+                            check if a position is a wall.
 
         Returns:
-            float: The heuristic value for this state
+            bool: True if the position is within bounds and not a wall,
+                False otherwise.
         """
+        if (position[0] < 0 or
+            position[0] >= walls.width or
+            position[1] < 0 or
+            position[1] >= walls.height or
+                walls[position[0]][position[1]]):
+            return False
+        return True
 
     def a_star_with_heuristic(self, start, target, walls):
         """
@@ -258,11 +308,13 @@ class PacmanAgent(Agent):
             from start to target.
         """
 
-        # Priority queue for A*, storing ((position, path, cost), priority)
+        # Priority queue for A*
         fringe = PriorityQueue()
-        fringe.push((start, []), 0)  # Start with priority 0 and an empty path
 
-        # Closed set to keep track of visited positions
+        # Start with priority 0 and an empty path
+        fringe.push((start, []), 0)
+
+        # Set of closed states
         closed = set()
 
         # Movement directions (dx, dy)
@@ -285,17 +337,18 @@ class PacmanAgent(Agent):
                 next_pos = (current[0] + dx, current[1] + dy)
 
                 # Check if the next position is valid
-                if (0 <= next_pos[0] < walls.width
-                        and 0 <= next_pos[1] < walls.height
-                        and not walls[next_pos[0]][next_pos[1]]):
+                if (self.inBounds(next_pos, walls)):
                     # Add to the fringe
                     new_path = path + [next_pos]
-                    g_cost = len(new_path)  # Cost so far
-                    h_cost = self.heuristic(next_pos, target)  # Heuristic cost
+
+                    # Cost so far
+                    g_cost = len(new_path)
+                    h_cost = manhattanDistance(next_pos, target)
                     priority = g_cost + h_cost
                     fringe.push((next_pos, new_path), priority)
 
-        return []  # Return an empty path if no solution is found
+        # Return an empty path if no solution is found
+        return []
 
     def _get_action(self, walls, beliefs, eaten, position):
         """
@@ -310,6 +363,8 @@ class PacmanAgent(Agent):
         """
 
         ghosts = []
+
+        # Find the center of mass for each ghost belief state
         for belief, is_eaten in zip(beliefs, eaten):
             if is_eaten:
                 continue
@@ -324,39 +379,41 @@ class PacmanAgent(Agent):
                 for j in range(belief.shape[1]):
                     center_of_mass[0] += i * belief[i, j]
                     center_of_mass[1] += j * belief[i, j]
+
             center_of_mass /= total_mass
 
+            # Add the center of mass to the list
             ghosts.append(center_of_mass)
 
         if not ghosts:
-            return Directions.STOP  # No ghosts detected
+            # No ghosts detected
+            return Directions.STOP
 
         # Find the closest ghost center
         target = min(ghosts, key=lambda
                      center: manhattanDistance(position, tuple(center)))
 
-        # Convert center to nearest grid point
         target = tuple(map(round, target))
 
         # Plan a path using A* algorithm
         path = self.a_star_with_heuristic(position, target, walls)
 
-        if not path:
-            return Directions.STOP  # No valid path found
+        if path:
+            next_position = path[0]
+            deltaX = next_position[0] - position[0]
+            deltaY = next_position[1] - position[1]
 
-        # Choose the first step in the path
-        next_position = path[0]
-        dx, dy = next_position[0] - position[0], next_position[1] - position[1]
+            if [deltaX, deltaY] == [-1, 0]:
+                return Directions.WEST
 
-        # Map direction to game directions
-        if dx == 1:
-            return Directions.EAST
-        elif dx == -1:
-            return Directions.WEST
-        elif dy == 1:
-            return Directions.NORTH
-        elif dy == -1:
-            return Directions.SOUTH
+            elif [deltaX, deltaY] == [1, 0]:
+                return Directions.EAST
+
+            elif [deltaX, deltaY] == [0, -1]:
+                return Directions.SOUTH
+
+            elif [deltaX, deltaY] == [0, 1]:
+                return Directions.NORTH
 
         return Directions.STOP
 
